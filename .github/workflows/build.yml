@@ -1,0 +1,166 @@
+name: Build and upload package
+on:
+  push:
+    branches:
+      - main
+
+env:
+  FORCE_COLOR: 1
+jobs:
+  build:
+    name: Build & Verify package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: start-measurement
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.13
+      - uses: astral-sh/setup-uv@v5
+      - run: uv pip install --upgrade setuptools_scm twine --system
+      - id: measurement-5
+        name: Record Measurement After Step
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Step
+          task: get-measurement
+      - if: ${{ !startsWith(github.ref, 'refs/tags') }}
+        name: Force version for Test PyPI upload
+        run: echo version=$(python -m setuptools_scm | awk -F+ '{print $1}' | tail
+          -1) >> $GITHUB_ENV
+      - id: measurement-7
+        name: Record Measurement After Force version for Test PyPI upload
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Force version for Test PyPI upload
+          task: get-measurement
+      - run: echo 'PKG = "pip"'>dvc/_build.py
+      - id: measurement-9
+        name: Record Measurement After Step
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Step
+          task: get-measurement
+      - env:
+          SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DVC: ${{ env.version }}
+        run: uv build
+      - id: measurement-11
+        name: Record Measurement After Step
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Step
+          task: get-measurement
+      - run: twine check --strict dist/*
+      - id: measurement-13
+        name: Record Measurement After Step
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Step
+          task: get-measurement
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Packages
+          path: dist/
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption-${{
+          github.run_id }}.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption-${{ github.run_id }}.json
+  pypi-publish:
+    environment:
+      name: pypi
+      url: https://pypi.org/p/dvc
+    if: github.event.action == 'published'
+    name: Publish released package to pypi.org
+    needs: build
+    permissions:
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: start-measurement
+      - uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Upload package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption-${{
+          github.run_id }}.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption-${{ github.run_id }}.json
+  test-pypi-publish:
+    environment:
+      name: test-pypi
+      url: https://test.pypi.org/p/dvc
+    if: ${{ github.event.action == 'published' || (github.repository == 'iterative/dvc'
+      && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    name: Publish dev package to test.pypi.org
+    needs: build
+    permissions:
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: start-measurement
+      - uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+      - name: Upload package to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption-${{
+          github.run_id }}.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption-${{ github.run_id }}.json
+permissions:
+  contents: read
